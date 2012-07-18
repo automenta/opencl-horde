@@ -153,7 +153,7 @@ public class GPUHorde {
 		
 		// create all the kernels and set the arguments
 		updateHorde = hordeProgram.createKernel("updateGTDLambda");
-		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, featuresBuf[0], featuresBuf[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
+		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, features[0], features[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
 		
 		predict = hordeProgram.createKernel("predict");
 		predict.setArgs(thetaBuf, featuresBuf[0], predictionBuf, nbFeatures);
@@ -276,7 +276,7 @@ public class GPUHorde {
 		
 		// create all the kernels and set the arguments
 		updateHorde = hordeProgram.createKernel("updateGTDLambda");
-		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, featuresBuf[0], featuresBuf[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
+		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, features[0], features[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
 		
 		predict = hordeProgram.createKernel("predict");
 		predict.setArgs(thetaBuf, featuresBuf[0], predictionBuf, nbFeatures);
