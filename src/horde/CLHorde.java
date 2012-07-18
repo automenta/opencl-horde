@@ -10,11 +10,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.bridj.Pointer;
 
 import rlpark.plugin.rltoys.envio.actions.Action;
 import rlpark.plugin.rltoys.envio.observations.Observation;
-import rlpark.plugin.rltoys.horde.demons.Demon;
 import rlpark.plugin.rltoys.horde.functions.GammaFunction;
 import rlpark.plugin.rltoys.horde.functions.HordeUpdatable;
 import rlpark.plugin.rltoys.horde.functions.OutcomeFunction;
@@ -22,11 +20,8 @@ import rlpark.plugin.rltoys.horde.functions.RewardFunction;
 import rlpark.plugin.rltoys.math.vector.RealVector;
 import rlpark.plugin.rltoys.utils.NotImplemented;
 
-import com.nativelibs4java.opencl.CLBuffer;
 import com.nativelibs4java.opencl.CLContext;
 import com.nativelibs4java.opencl.CLDevice;
-import com.nativelibs4java.opencl.CLEvent;
-import com.nativelibs4java.opencl.CLKernel;
 import com.nativelibs4java.opencl.CLPlatform;
 import com.nativelibs4java.opencl.CLQueue;
 import com.nativelibs4java.opencl.JavaCL;
@@ -241,6 +236,11 @@ public class CLHorde {
 		LinkedList<CLContext> contextList= new LinkedList<CLContext>();
 		int maxGPU=0, maxGPUindex=0;
 		
+		// check if any platform was found
+		if(platforms.length == 0){
+			throw new RuntimeException("Not OpenCL platform detected. Maybe your opencl drivers are missing.");
+		}
+		
 		// find the platform that offers the most GPUs
 		for(int i=0; i< platforms.length; i++){
 			devices= platforms[i].listGPUDevices(onlyAvailable);
@@ -249,6 +249,12 @@ public class CLHorde {
 				maxGPUindex=i;
 			}
 		}
+		
+		// check if a GPU was found
+		if(maxGPU == 0){
+			throw new RuntimeException("No available GPU found");
+		}
+		
 		// set and print info
 		platform= platforms[maxGPUindex];
 		printPlatformInfo();
