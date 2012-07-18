@@ -3,7 +3,6 @@ package horde;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.bridj.Pointer;
@@ -57,6 +56,10 @@ public class GPUHorde {
 	 * The dimensions of the kernel tasks
 	 */
 	int[] numDemon;
+	/**
+	 * The work group size;
+	 */
+	int[] workGroupSize= {64};
 	
 	/**
 	 * The context to be used by the GPUHorde
@@ -211,7 +214,7 @@ public class GPUHorde {
 		
 		// Once all memory transfers are done, run the kernel that will update the weights on the GPU
 		last= x_t;
-		demonUpdate = updateHorde.enqueueNDRange(queue, numDemon, rewardWrite, gammaWrite, rhoWrite, feature1Write, feature2Write);
+		demonUpdate = updateHorde.enqueueNDRange(queue, numDemon, workGroupSize, rewardWrite, gammaWrite, rhoWrite, feature1Write, feature2Write);
 	}
 	
 	/**
@@ -237,7 +240,7 @@ public class GPUHorde {
 			features[0].setFloats(f1);
 			CLEvent feature1Write= featuresBuf[0].write(queue, features[0], false, demonUpdate);
 			
-			CLEvent predictEvent= predict.enqueueNDRange(queue, numDemon, feature1Write);
+			CLEvent predictEvent= predict.enqueueNDRange(queue, numDemon, workGroupSize, feature1Write);
 			predictions= predictionBuf.read(queue, predictEvent);
 			last=v;
 		}
