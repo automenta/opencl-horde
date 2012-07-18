@@ -447,6 +447,12 @@ public class CLHorde {
 		
 		return localIndex;
 	}
+	/**
+	 * When all is done, call this method to shutdown executor.
+	 */
+	public void shutdown(){
+		executor.shutdown();
+	}
 	
 	
 }
