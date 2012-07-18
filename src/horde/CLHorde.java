@@ -179,6 +179,10 @@ public class CLHorde {
 			maxAlloc[i]= devices[i].getMaxMemAllocSize();
 			maxMem[i]= devices[i].getGlobalMemSize();
 			totalMem += maxMem[i];
+			// check if max buff alloc is big enough
+			if(maxAlloc[i] < GPUHorde.getAllocReq(nbFeatures, nbDemons/devices.length)){
+				throw new RuntimeException("To small alloc size. Too many demons, too many features");
+			}
 		}
 		
 		// check if enough memory is available
