@@ -124,9 +124,17 @@ public class CLHorde {
 			this.horde= horde;
 			this.v= v;
 		}
+		public void set(GPUHorde horde){
+			this.horde= horde;
+			this.v= null;
+		}
 		@Override
 		public float[] call() {
-			return horde.predictions(v);
+			if(v==null){
+				return horde.predictions();
+			}else{
+				return horde.predictions(v);
+			}
 		}
 		
 	}
@@ -386,6 +394,38 @@ public class CLHorde {
 	}
 	
 	/**
+	 * Call to compute all predictions based on the last feature vector used
+	 * @return		Returns the predictions
+	 */
+	public float[] predictions(){
+		float[] p= new float[demons.size()];
+		
+		// start computing the prediction on all GPUs
+		for(int i=0; i<devices.length; i++){
+			predictors[i].set(hordes[i]);
+			futures[i]= executor.submit(predictors[i]);
+		}
+		
+		// wait and consolidate the results
+		int i=0;
+		for( int j=0; j< devices.length; j++){
+			float[] ptmp=null;
+			try {
+				ptmp = (float[]) futures[i].get();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+			for(int k=0; k< ptmp.length; k++){
+				p[i] = ptmp[k];
+				i++;
+			}
+		}
+		return p;
+	}
+	
+	/**
 	 * Set parameters in all GPUHorde.
 	 * This forces all GPUHorde to recompile. Use sparingly.
 	 * @param alpha		The new alpha value.
@@ -456,6 +496,66 @@ public class CLHorde {
 	 */
 	public void shutdown(){
 		executor.shutdown();
+	}
+	
+	/**
+	 * Fetch the theta weights (unordered).
+	 * This is a blocking call and will not fetch all GPUs simultaneously.
+	 * @return	The weights in their unordered form
+	 */
+	public float[] getTheta(){
+		//TODO reorder the theta in a way that makes sense. Should be done in GPUHorde
+		float[] theta= new float[nbFeatures*demons.size()];
+		int k=0;
+		for(int i=0; i<hordes.length; i++){
+			float[] thetaGPU= hordes[i].getTheta();
+			for(int j=0; j<thetaGPU.length; j++){
+				theta[k]= thetaGPU[j];
+				k++;
+			}
+		}
+		return theta;
+		
+	}
+	
+	/**
+	 * Fetch the w weights (unordered).
+	 * This is a blocking call and will not fetch all GPUs simultaneously.
+	 * @return	The weights in their unordered form
+	 */
+	public float[] getW(){
+		//TODO reorder the w weights in a way that makes sense. Should be done in GPUHorde
+		float[] w= new float[nbFeatures*demons.size()];
+		int k=0;
+		for(int i=0; i<hordes.length; i++){
+			float[] wGPU= hordes[i].getW();
+			for(int j=0; j<wGPU.length; j++){
+				w[k]= wGPU[j];
+				k++;
+			}
+		}
+		return w;
+		
+	}
+	
+	/**
+	 * Fetch the w weights (unordered).
+	 * This is a blocking call and will not fetch all GPUs simultaneously.
+	 * @return	The weights in their unordered form
+	 */
+	public float[] getTrace(){
+		//TODO reorder the w weights in a way that makes sense. Should be done in GPUHorde
+		float[] trace= new float[nbFeatures*demons.size()];
+		int k=0;
+		for(int i=0; i<hordes.length; i++){
+			float[] traceGPU= hordes[i].getTrace();
+			for(int j=0; j<traceGPU.length; j++){
+				trace[k]= traceGPU[j];
+				k++;
+			}
+		}
+		return trace;
+		
 	}
 	
 	

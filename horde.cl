@@ -68,7 +68,7 @@ int nextLeadingOne(uint index, uint x){
 *	delta:	The computed delta
 *
 */ 
-float2 computeDeltaGTD( __global const float* theta, 
+float2 computeDeltaGTD( __global float* theta, 
 			__global const float* features1,
 			__global const float* features2, 
 			float gamma, 
@@ -119,8 +119,8 @@ float2 computeDeltaGTD( __global const float* theta,
 *
 */
 void updateThetaGTD(	__global float* theta,
-			__global const float* w,
-			__global const float* trace,
+			__global float* w,
+			__global float* trace,
 			__global const float* features1,
 			float alpha,
 			float gamma,
@@ -167,7 +167,7 @@ void updateThetaGTD(	__global float* theta,
 *
 */
 void updateWGTD(__global float* w,
-		__global const float* trace,
+		__global float* trace,
 		__global const float* features1,
 		float alpha,
 		float delta,
@@ -177,14 +177,14 @@ void updateWGTD(__global float* w,
 {
 	int i;
 	int j=0;
-	float Qw=0;
+	float Qw=0.0;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Qw += features1[j]*w[i];
 		j++;
 	}
 	j=0;
 	for(i=index; i<dim*numDemons; i+= numDemons){
-		w[i] += w[i] + alpha*(delta*trace[i] - Qw*features1[j]);
+		w[i] = w[i] + alpha*(delta*trace[i] - Qw*features1[j]);
 		j++;
 	}
 }
@@ -284,9 +284,9 @@ __kernel void initialise(__global float* theta,
 	int numDemons= get_global_size(0);
 	int i;
 	for(i=index; i<dim*numDemons; i+= numDemons){
-		theta[i]=0;
-		w[i]=0;
-		trace[i]=0;
+		theta[i]=0.0f;
+		w[i]=0.0f;
+		trace[i]=0.0f;
 	}
 }
 
@@ -302,7 +302,7 @@ __kernel void initialise(__global float* theta,
 *
 *
 */
-__kernel void predict(__global const float* theta,
+__kernel void predict(__global float* theta,
 		__global const float* features,
 		__global float* predictions,
 		int dim)
