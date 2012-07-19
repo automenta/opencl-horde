@@ -19,6 +19,10 @@
 #define LAMBDA 0.6f
 #endif
 
+#ifndef VECTOR
+#define VECTOR float4
+#endif
+
 /*
 * 	Returns the index of the next bit set to one starting at a
 * specific index (including that index)
@@ -238,30 +242,112 @@ __kernel void
 		__global const float* rewardArray,
 		__global const float* gammaArray,
 		__global float* prediction,
-		int dim)
+		const int dim)
 {
+
+	int i= get_global_id(0);
+	int size= get_global_size(0);
+
+	float rho= rhoArray[i];
+	float reward= rewardArray[i];
+	float gamma= gammaArray[i];
+
+	//Compute the TD error
+	float2 delta= computeDeltaGTD(theta, features1, features2, gamma, reward, i, dim, size);
+
+	//update the prediction
+	prediction[i]= delta.y;
+
+	//Update the elligibility trace
+	updateTraceGTD(trace, features1, rho, gamma, LAMBDA, i, dim, size);
+
+	//Update Theta
+	updateThetaGTD(theta, w, trace, features1, ALPHA, gamma, delta.x, LAMBDA, i, dim, size);
+	
+	//Update w
+	updateWGTD(w, trace, features1, ALPHA*ETA, delta.x, i, dim, size);
+
+}
+
+/* The same function as updateGTDLambda but without out any function calls
+* This might influence performance (or not)
+*/
+__kernel void
+ updateGTDLambdaNoCalls(__global float* theta, 
+		__global float* w,
+		__global float* trace, 
+		__global const float* features1,
+		__global const float* features2, 
+		__global const float* rhoArray, 
+		__global const float* rewardArray,
+		__global const float* gammaArray,
+		__global float* prediction,
+		const int dim)
+{
+
 	int index= get_global_id(0);
-	int numDemon= get_global_size(0);
-	float rho= rhoArray[index];
-	float reward= rewardArray[index];
+	int numDemons= get_global_size(0);
+
+	int i;
+	int j;
+
 	float gamma= gammaArray[index];
 
 	//Compute the TD error
-	float2 delta= computeDeltaGTD(theta, features1, features2, gamma, reward, index, dim, numDemon);
+	j=0;
+	float Q1=0.0f, Q2=0.0f;
+	float delta;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		Q1 += theta[i]*features1[j];
+		Q2 += theta[i]*features2[j];
+		j++;
+	}
+	delta= rewardArray[index] + gamma*Q2 - Q1;
+
 
 	//update the prediction
-	prediction[index]= delta.y;
+	prediction[i]= Q2;
 
 	//Update the elligibility trace
-	updateTraceGTD(trace, features1, rho, gamma, LAMBDA, index, dim, numDemon);
+	j=0;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		trace[i]= rhoArray[index]*(features1[j] + gamma*LAMBDA*trace[i]);
+		j++;
+	}
 
 	//Update Theta
-	updateThetaGTD(theta, w, trace, features1, ALPHA, gamma, delta.x, LAMBDA, index, dim, numDemon);
+	j=0;
+	float one_minus_lambda= 1.0f-LAMBDA;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		Q1 += trace[i]*w[i];
+	}
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		theta[i] = theta[i] + ALPHA*(delta*trace[i] 
+				- gamma*(one_minus_lambda)*Q1*features1[j]);
+		j++;
+	}
 	
 	//Update w
-	updateWGTD(w, trace, features1, ALPHA*ETA, delta.x, index, dim, numDemon);
+	j=0;
+	Q1=0.0f;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		Q1 += features1[j]*w[i];
+		j++;
+	}
+	j=0;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		w[i] = w[i] + ALPHA*ETA*(delta*trace[i] - Q1*features1[j]);
+		j++;
+	}
 
 }
+
+
+
+
+
+
+
 
 /*
 *	Simple initialization method that sets all weights and trace to zero

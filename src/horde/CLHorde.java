@@ -175,7 +175,7 @@ public class CLHorde {
 	 * are equivalent.
 	 */
 	private void partitionDemons() {
-		//TODO implement a smarter way of partitioning demons in case where GPU are different
+		//TODO implement a smarter way of partitioning demons in case where GPUs are different
 		
 		long[] maxAlloc= new long[devices.length];
 		long[] maxMem= new long[devices.length];
@@ -189,7 +189,7 @@ public class CLHorde {
 			totalMem += maxMem[i];
 			// check if max buff alloc is big enough
 			if(maxAlloc[i] < GPUHorde.getAllocReq(nbFeatures, nbDemons/devices.length)){
-				throw new RuntimeException("To small alloc size. Too many demons, too many features");
+				throw new RuntimeException("Too small alloc size. Too many demons, too many features");
 			}
 		}
 		
@@ -287,7 +287,10 @@ public class CLHorde {
 		queues= new CLQueue[contexts.length];
 		hordes= new GPUHorde[contexts.length];
 		for(int i=0; i< contexts.length; i++){
-			queues[i]= contexts[i].createDefaultOutOfOrderQueue();
+			queues[i]= contexts[i].createDefaultOutOfOrderQueueIfPossible();
+			if(queues[i]== null){
+				queues[i]= contexts[i].createDefaultQueue(null);
+			}
 			hordes[i]= new GPUHorde(contexts[i], queues[i], devices[i]);
 		}
 		
@@ -306,9 +309,10 @@ public class CLHorde {
 	 * Print basic info of the current platform.
 	 */
 	public void printPlatformInfo(){
-		System.out.println("Currently using:");
+		System.out.println("\nCurrently using:");
 		System.out.println("Platform:\t" + platform.getName());
 		System.out.println("\t\tOpencl " + platform.getVersion());
+		System.out.println();
 	}
 	
 	/**
@@ -325,7 +329,7 @@ public class CLHorde {
 			System.out.println("Type:\t\t\t"+devices[i].getType());
 			System.out.println("max group size:\t\t"+devices[i].getMaxWorkGroupSize());
 			System.out.println("max buffer size:\t"+devices[i].getMaxConstantBufferSize()/(1024) +" kb");
-			System.out.println("max alloc size:\t\t"+devices[i].getMaxMemAllocSize()/ (1024*1024) + " mb");
+			System.out.println("max alloc size:\t\t"+devices[i].getMaxMemAllocSize()/ (1024*1024) + " mb\n");
 		}
 	}
 	/**
@@ -544,7 +548,7 @@ public class CLHorde {
 	 * @return	The weights in their unordered form
 	 */
 	public float[] getTrace(){
-		//TODO reorder the w weights in a way that makes sense. Should be done in GPUHorde
+		//TODO reorder the trace in a way that makes sense. Should be done in GPUHorde
 		float[] trace= new float[nbFeatures*demons.size()];
 		int k=0;
 		for(int i=0; i<hordes.length; i++){

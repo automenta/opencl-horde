@@ -59,7 +59,7 @@ public class GPUHorde {
 	/**
 	 * The work group size;
 	 */
-	int[] workGroupSize= {64};
+	int[] workGroupSize= {128};
 	
 	/**
 	 * The context to be used by the GPUHorde
@@ -118,6 +118,11 @@ public class GPUHorde {
 		
 		ByteOrder order= context.getByteOrder();
 		
+		
+		if(demons.size() == 0){
+			System.out.println("Device "+ device.getName()+" has no demons");
+			return;
+		}
 		// allocate all arrays
 		gamma= Pointer.allocateFloats(demons.size()).order(order);
 		reward= Pointer.allocateFloats(demons.size()).order(order);
@@ -150,6 +155,7 @@ public class GPUHorde {
 		// create the program from source
 		hordeProgram= context.createProgram(kernelSource);
 		
+
 		
 		// create all the kernels and set the arguments
 		updateHorde = hordeProgram.createKernel("updateGTDLambda");
