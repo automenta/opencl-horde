@@ -269,19 +269,19 @@ __kernel void
 
 }
 
-/* The same function as updateGTDLambda but without out any function calls
-* This might influence performance (or not)
+/* The same function as updateGTDLambda vectorized to make use of the hardware vector operations.
+* This should improve significantly performance over the non-vecotrized version.
 */
 __kernel void
- updateGTDLambdaNoCalls(__global float* theta, 
-		__global float* w,
-		__global float* trace, 
+ vec_updateGTDLambda(__global float4* theta, 
+		__global float4* w,
+		__global float4* trace, 
 		__global const float* features1,
 		__global const float* features2, 
-		__global const float* rhoArray, 
-		__global const float* rewardArray,
-		__global const float* gammaArray,
-		__global float* prediction,
+		__global const float4* rhoArray, 
+		__global const float4* rewardArray,
+		__global const float4* gammaArray,
+		__global float4* prediction,
 		const int dim)
 {
 
@@ -291,12 +291,12 @@ __kernel void
 	int i;
 	int j;
 
-	float gamma= gammaArray[index];
+	float4 gamma= gammaArray[index];
 
 	//Compute the TD error
 	j=0;
-	float Q1=0.0f, Q2=0.0f;
-	float delta;
+	float4 Q1= (float4) 0.0f, Q2=(float4) 0.0f;
+	float4 delta;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += theta[i]*features1[j];
 		Q2 += theta[i]*features2[j];
@@ -311,25 +311,26 @@ __kernel void
 	//Update the elligibility trace
 	j=0;
 	for(i=index; i<dim*numDemons; i+= numDemons){
-		trace[i]= rhoArray[index]*(features1[j] + gamma*LAMBDA*trace[i]);
+		trace[i]= rhoArray[index]*((float4)(features1[j]) + gamma*LAMBDA*trace[i]);
 		j++;
 	}
 
 	//Update Theta
 	j=0;
+	Q1= (float4) (0.0f);
 	float one_minus_lambda= 1.0f-LAMBDA;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += trace[i]*w[i];
 	}
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		theta[i] = theta[i] + ALPHA*(delta*trace[i] 
-				- gamma*(one_minus_lambda)*Q1*features1[j]);
+				- gamma*Q1*(features1[j]*(one_minus_lambda)));
 		j++;
 	}
 	
 	//Update w
 	j=0;
-	Q1=0.0f;
+	Q1= (float4) (0.0f);
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += features1[j]*w[i];
 		j++;
@@ -343,8 +344,25 @@ __kernel void
 }
 
 
+/* Set all trace to zero
+*
+* Param
+*
+*	trace :	The elgibility trace
+*
+*	dim :	The number of features
+*/
+__kernel void traceReset( __global float* trace, 
+			int dim)
+{
 
+	int i;
+	int numDemons= get_global_size(0);
+	for(i=get_global_id(0); i<dim*numDemons; i+= numDemons){
+		trace[i]=0.0f;
+	}
 
+}
 
 
 

@@ -51,7 +51,7 @@ public class GPUHorde {
 	/**
 	 * A kernel (program) that will run on the GPU
 	 */
-	CLKernel updateHorde, predict;
+	CLKernel updateHorde, predict, traceReset;
 	/**
 	 * The dimensions of the kernel tasks
 	 */
@@ -97,6 +97,16 @@ public class GPUHorde {
 	 */
 	RealVector last;
 	
+	/**
+	 * Use the optimised vectorized version of the kernel.
+	 *	This is still being debugged so use at your own risk.
+	 */
+	private boolean vectorize= false;
+	
+	private String updateKernelName= "updateGTDLambda", 
+				predictKernelName= "predict",
+				traceResetKernelName= "traceReset";
+	
 	
 	public GPUHorde(CLContext context, CLQueue queue, CLDevice device) {
 		this.context=context;
@@ -112,6 +122,17 @@ public class GPUHorde {
 	public void initialise(List<CLDemon> demonList, int nbFeatures) {
 		demons= demonList;
 		this.nbFeatures= nbFeatures;
+		
+		// set the dimensions of the task
+		numDemon= new int[] {demons.size()};
+		
+		if(vectorize){
+			if(demons.size()%workGroupSize[0] != 0)
+				throw new RuntimeException("The total number of Demons has to be a multiple of the work group size which is: "+ Integer.toString(demons.size()));
+		}else{
+			if(demons.size()%(4*workGroupSize[0]) != 0)
+				throw new RuntimeException("The total number of Demons has to be a multiple of 4 time the work group size which is: "+ Integer.toString(4*demons.size()));
+		}
 		
 		features= new Pointer[2];
 		featuresBuf= new CLBuffer[2];
@@ -144,25 +165,33 @@ public class GPUHorde {
 		featuresBuf[0]= context.createFloatBuffer(Usage.Input, nbFeatures);
 		featuresBuf[1]= context.createFloatBuffer(Usage.Input, nbFeatures);
 		
-		// load up the kernel source file
+		if(vectorize){
+			updateKernelName= "vec_"+updateKernelName;
+			//predictKernelName= "vec_"+predictKernelName;
+			numDemon[0]= (int) numDemon[0]/4;
+		}
+		
 		try {
 			kernelSource= IOUtils.readText(new File("../horde.cl"));
 		} catch (IOException e) {
 			e.printStackTrace();
 			System.exit(1);
 		}
+
 		
 		// create the program from source
 		hordeProgram= context.createProgram(kernelSource);
 		
-
 		
 		// create all the kernels and set the arguments
-		updateHorde = hordeProgram.createKernel("updateGTDLambda");
+		updateHorde = hordeProgram.createKernel(updateKernelName);
 		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, featuresBuf[0], featuresBuf[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
 		
-		predict = hordeProgram.createKernel("predict");
+		predict = hordeProgram.createKernel(predictKernelName);
 		predict.setArgs(thetaBuf, featuresBuf[0], predictionBuf, nbFeatures);
+		
+		traceReset = hordeProgram.createKernel(traceResetKernelName);
+		traceReset.setArgs(traceBuf, nbFeatures);
 		
 		// initialise all weights using the kernel initialise
 		CLKernel initKernel= hordeProgram.createKernel("initialise");
@@ -176,55 +205,63 @@ public class GPUHorde {
 			demons.get(i).initialize(i, reward, rho, gamma);
 		}
 		
-		// set the dimensions of the task
-		numDemon= new int[] {demons.size()};
+		
 	}
 
 	public void update(RealVector x_t, Action a_t, RealVector x_tp1) {
 		
-		// update the rewards on the GPU
-		for( CLDemon demon: demons){
-			demon.updateReward();
+		if(x_t == null){
+			//set trace to zero if x_t is null
+			resetTrace();
+		}else{
+			// update the rewards on the GPU
+			for( CLDemon demon: demons){
+				demon.updateReward();
+			}
+			CLEvent rewardWrite= rewardBuf.write(queue, reward, false, demonUpdate);
+			
+			// update the gammas on the GPU
+			for( CLDemon demon: demons){
+				demon.updateGamma();
+			}
+			CLEvent gammaWrite= gammaBuf.write(queue, gamma, false, demonUpdate);
+			
+			// update the rhos on the GPU
+			for( CLDemon demon: demons){
+				demon.updateRho(x_t, a_t);
+			}
+			CLEvent rhoWrite= rhoBuf.write(queue, rho, false, demonUpdate);
+			
+			// update the feature vectors on the GPU
+			double[] d1=x_t.accessData();
+			double[] d2=x_tp1.accessData();
+			float[] f1= new float[d1.length];
+			float[] f2= new float[d2.length];
+			for(int i=0; i< d1.length; i++){
+				f1[i]= (float) d1[i];
+				f2[i]= (float) d2[i];
+			}
+			
+			features[0].setFloats(f1);
+			CLEvent feature1Write= featuresBuf[0].write(queue, features[0], false, demonUpdate);
+			
+			features[1].setFloats(f2);
+			CLEvent feature2Write= featuresBuf[0].write(queue, features[0], false, demonUpdate);
+			
+			//checkForNaN(); //BUG HUNT
+			
+			// Once all memory transfers are done, run the kernel that will update the weights on the GPU
+			CLEvent lastUpdate= demonUpdate;
+			last= x_t;
+			demonUpdate = updateHorde.enqueueNDRange(queue, numDemon, workGroupSize, rewardWrite, gammaWrite, rhoWrite, feature1Write, feature2Write);
+			if(lastUpdate != null)
+				lastUpdate.waitFor();
 		}
-		CLEvent rewardWrite= rewardBuf.write(queue, reward, false, demonUpdate);
 		
-		// update the gammas on the GPU
-		for( CLDemon demon: demons){
-			demon.updateGamma();
-		}
-		CLEvent gammaWrite= gammaBuf.write(queue, gamma, false, demonUpdate);
-		
-		// update the rhos on the GPU
-		for( CLDemon demon: demons){
-			demon.updateRho(x_t, a_t);
-		}
-		CLEvent rhoWrite= rhoBuf.write(queue, rho, false, demonUpdate);
-		
-		// update the feature vectors on the GPU
-		double[] d1=x_t.accessData();
-		double[] d2=x_tp1.accessData();
-		float[] f1= new float[d1.length];
-		float[] f2= new float[d2.length];
-		for(int i=0; i< d1.length; i++){
-			f1[i]= (float) d1[i];
-			f2[i]= (float) d2[i];
-		}
-		
-		features[0].setFloats(f1);
-		CLEvent feature1Write= featuresBuf[0].write(queue, features[0], false, demonUpdate);
-		
-		features[1].setFloats(f2);
-		CLEvent feature2Write= featuresBuf[0].write(queue, features[0], false, demonUpdate);
-		
-		//checkForNaN(); //BUG HUNT
-		
-		// Once all memory transfers are done, run the kernel that will update the weights on the GPU
-		CLEvent lastUpdate= demonUpdate;
-		last= x_t;
-		demonUpdate = updateHorde.enqueueNDRange(queue, numDemon, workGroupSize, rewardWrite, gammaWrite, rhoWrite, feature1Write, feature2Write);
-		if(lastUpdate != null)
-			lastUpdate.waitFor();
-		
+	}
+	
+	public void resetTrace(){
+		(traceReset.enqueueNDRange(queue, numDemon, workGroupSize, demonUpdate)).waitFor();
 	}
 	
 	/**
@@ -279,16 +316,21 @@ public class GPUHorde {
 		// create the program from source
 		hordeProgram= context.createProgram(kernelSource);
 		
+		
+		hordeProgram.undefineMacro("ALPHA");
+		hordeProgram.undefineMacro("ETA");
+		hordeProgram.undefineMacro("LAMBDA");
+		
 		// define all the required parameters
 		hordeProgram.defineMacro("ALPHA", Float.toString(alpha)+"f");
 		hordeProgram.defineMacro("ETA", Float.toString(eta)+"f");
 		hordeProgram.defineMacro("LAMBDA", Float.toString(lambda)+"f");
 		
 		// create all the kernels and set the arguments
-		updateHorde = hordeProgram.createKernel("updateGTDLambda");
+		updateHorde = hordeProgram.createKernel(updateKernelName);
 		updateHorde.setArgs(thetaBuf, wBuf, traceBuf, featuresBuf[0], featuresBuf[1], rhoBuf, rewardBuf, gammaBuf, predictionBuf, nbFeatures);
 		
-		predict = hordeProgram.createKernel("predict");
+		predict = hordeProgram.createKernel(predictKernelName);
 		predict.setArgs(thetaBuf, featuresBuf[0], predictionBuf, nbFeatures);
 		
 	}
