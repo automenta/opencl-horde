@@ -91,7 +91,7 @@ float2 computeDeltaGTD( __global float* theta,
 		j++;
 	}
 	delta.x= reward + gamma*Q2 - Q1;
-	delta.y= Q2;
+	delta.y= Q1;
 	return delta;
 }
 
@@ -306,7 +306,7 @@ __kernel void
 
 
 	//update the prediction
-	prediction[i]= Q2;
+	prediction[i]= Q1;
 
 	//Update the elligibility trace
 	j=0;

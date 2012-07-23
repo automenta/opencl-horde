@@ -58,6 +58,7 @@ public class GPUHorde {
 	int[] numDemon;
 	/**
 	 * The work group size;
+	 * For best performance, should be a multiple of the wavefront size (usually 64)
 	 */
 	int[] workGroupSize= {128};
 	
@@ -101,7 +102,12 @@ public class GPUHorde {
 	 * Use the optimised vectorized version of the kernel.
 	 *	This is still being debugged so use at your own risk.
 	 */
-	private boolean vectorize= false;
+	private boolean vectorize= true;
+	
+	/**
+	 * the vector size to use in the vectorized version of the kernel
+	 */
+	private int vectorSize=4;
 	
 	private String updateKernelName= "updateGTDLambda", 
 				predictKernelName= "predict",
@@ -126,12 +132,13 @@ public class GPUHorde {
 		// set the dimensions of the task
 		numDemon= new int[] {demons.size()};
 		
+		// pad the demons so that we have a multiple of the group size
 		if(vectorize){
-			if(demons.size()%workGroupSize[0] != 0)
-				throw new RuntimeException("The total number of Demons has to be a multiple of the work group size which is: "+ Integer.toString(demons.size()));
+			int size= vectorSize * workGroupSize[0];
+			numDemon[0] += ((size - numDemon[0]%size))%size;
 		}else{
-			if(demons.size()%(4*workGroupSize[0]) != 0)
-				throw new RuntimeException("The total number of Demons has to be a multiple of 4 time the work group size which is: "+ Integer.toString(4*demons.size()));
+			int size= workGroupSize[0];
+			numDemon[0] += ((size - numDemon[0]%size))%size;
 		}
 		
 		features= new Pointer[2];
@@ -153,14 +160,14 @@ public class GPUHorde {
 		features[1]= Pointer.allocateFloats(nbFeatures).order(order);
 		
 		// create all buffers to be used on the GPU
-		thetaBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*demons.size());
-		wBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*demons.size());
-		traceBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*demons.size());
+		thetaBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*numDemon[0]);
+		wBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*numDemon[0]);
+		traceBuf= context.createFloatBuffer(Usage.InputOutput, nbFeatures*numDemon[0]);
 		
-		gammaBuf= context.createFloatBuffer(Usage.Input, demons.size());
-		rhoBuf= context.createFloatBuffer(Usage.Input, demons.size());
-		rewardBuf= context.createFloatBuffer(Usage.Input, demons.size());
-		predictionBuf= context.createFloatBuffer(Usage.Output, demons.size());
+		gammaBuf= context.createFloatBuffer(Usage.Input, numDemon[0]);
+		rhoBuf= context.createFloatBuffer(Usage.Input, numDemon[0]);
+		rewardBuf= context.createFloatBuffer(Usage.Input, numDemon[0]);
+		predictionBuf= context.createFloatBuffer(Usage.Output, numDemon[0]);
 		
 		featuresBuf[0]= context.createFloatBuffer(Usage.Input, nbFeatures);
 		featuresBuf[1]= context.createFloatBuffer(Usage.Input, nbFeatures);
@@ -197,7 +204,7 @@ public class GPUHorde {
 		CLKernel initKernel= hordeProgram.createKernel("initialise");
 		initKernel.setArgs(thetaBuf, wBuf, traceBuf, nbFeatures);
 		
-		CLEvent initEvent= initKernel.enqueueNDRange(queue, null, new int[] {demons.size()}, new int[] {64});
+		CLEvent initEvent= initKernel.enqueueNDRange(queue, numDemon, workGroupSize);
 		initEvent.waitFor();
 		
 		// link all demons to their reward, rho and gamma arrays

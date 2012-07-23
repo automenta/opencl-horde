@@ -23,6 +23,8 @@ import rlpark.plugin.rltoys.utils.NotImplemented;
 import com.nativelibs4java.opencl.CLContext;
 import com.nativelibs4java.opencl.CLDevice;
 import com.nativelibs4java.opencl.CLPlatform;
+import com.nativelibs4java.opencl.CLPlatform.ContextProperties;
+import com.nativelibs4java.opencl.CLPlatform.DeviceFeature;
 import com.nativelibs4java.opencl.CLQueue;
 import com.nativelibs4java.opencl.JavaCL;
 /**
@@ -169,6 +171,25 @@ public class CLHorde {
 		
 	}
 	
+	public CLHorde(List<CLDemon> demons, List<RewardFunction> rewardFunctions, List<OutcomeFunction> outcomeFunctions,
+		      List<GammaFunction> gammaFunctions, int nbFeatures, boolean CPU) {
+		// store the demons
+		this.demons= new ArrayList<CLDemon>();
+		this.demons.addAll(demons);
+		functions= new ArrayList<HordeUpdatable>();
+		
+		// add all functions to the update list
+		addFunctions(rewardFunctions);
+		addFunctions(outcomeFunctions);
+		addFunctions(gammaFunctions);
+		
+		this.nbFeatures=nbFeatures;
+		
+		// initialise the OpenCL context and partition the demons
+		init(CPU);
+		partitionDemons();
+	}
+	
 	/**
 	 * Partitioning of the demons amongst the different GPU.
 	 * Currently, the partitioning is very simple and assumes all GPUs
@@ -236,52 +257,67 @@ public class CLHorde {
 	
 	
 	
-	
-	
-	
 	/**
-	 * Initialise all the OpenCL contexts and pick the best platform on which to run
+	 * Initialise all the OpenCL contexts and pick the best platform on which to run on GPUs
 	 */
 	public void init(){
-		// get all platforms containing GPUs
-		CLPlatform[] platforms = JavaCL.listGPUPoweredPlatforms();
+		init(false);
+	}
+	
+	/**
+	 *  Initialise all the OpenCL contexts and pick the best platform on which to run or on the CPU
+	 * @param CPU true if demons should run on the CPU and not on the GPUs
+	 */
+	public void init(boolean CPU){
 		LinkedList<CLContext> contextList= new LinkedList<CLContext>();
-		int maxGPU=0, maxGPUindex=0;
 		
-		// check if any platform was found
-		if(platforms.length == 0){
-			throw new RuntimeException("Not OpenCL platform detected. Maybe your opencl drivers are missing.");
-		}
-		
-		// find the platform that offers the most GPUs
-		for(int i=0; i< platforms.length; i++){
-			devices= platforms[i].listGPUDevices(onlyAvailable);
-			if(maxGPU< devices.length){
-				maxGPU= devices.length;
-				maxGPUindex=i;
+		if(CPU){
+			contexts= new CLContext[1];
+			contexts[0]= JavaCL.createBestContext(DeviceFeature.CPU);
+			if(contexts[0] == null || contexts[0].getDeviceCount() <1){
+				throw new RuntimeException("CPU context failed. Maybe your opencl drivers are missing.");
 			}
+			devices= contexts[0].getDevices();
+			
+		}else{
+			// get all platforms containing GPUs
+			CLPlatform[] platforms = JavaCL.listGPUPoweredPlatforms();
+			int maxGPU=0, maxGPUindex=0;
+			
+			// check if any platform was found
+			if(platforms.length == 0){
+				throw new RuntimeException("No OpenCL platform detected. Maybe your opencl drivers are missing.");
+			}
+			
+			// find the platform that offers the most GPUs
+			for(int i=0; i< platforms.length; i++){
+				devices= platforms[i].listGPUDevices(onlyAvailable);
+				if(maxGPU< devices.length){
+					maxGPU= devices.length;
+					maxGPUindex=i;
+				}
+			}
+			
+			// check if a GPU was found
+			if(maxGPU == 0){
+				throw new RuntimeException("No available GPU found");
+			}
+			
+			// set platform
+			platform= platforms[maxGPUindex];
+	
+			// set devices
+			devices= platform.listGPUDevices(onlyAvailable);	
+			
+			// create a context for every GPU
+			for(int j=0; j< devices.length; j++){
+				contextList.add(platforms[maxGPUindex].createContext(null, devices[j]));
+			}
+			
+			// save all the new context in the array contexts
+			contexts= new CLContext[contextList.size()];
+			contexts= contextList.toArray(contexts);
 		}
-		
-		// check if a GPU was found
-		if(maxGPU == 0){
-			throw new RuntimeException("No available GPU found");
-		}
-		
-		// set and print info
-		platform= platforms[maxGPUindex];
-		printPlatformInfo();
-
-		devices= platform.listGPUDevices(onlyAvailable);
-		printDeviceInfo();
-		
-		// create a context for every GPU
-		for(int j=0; j< devices.length; j++){
-			contextList.add(platforms[maxGPUindex].createContext(null, devices[j]));
-		}
-		
-		// save all the new context in the array contexts
-		contexts= new CLContext[contextList.size()];
-		contexts= contextList.toArray(contexts);
 		
 		// create a queue for every context and create GPUHorde for every GPU
 		queues= new CLQueue[contexts.length];
@@ -293,6 +329,13 @@ public class CLHorde {
 			}
 			hordes[i]= new GPUHorde(contexts[i], queues[i], devices[i]);
 		}
+		
+		
+		// print platform info
+		printPlatformInfo();
+		
+		// print device info
+		printDeviceInfo();
 		
 		// set up executor, the updater runnables and the predictor callables
 		executor= Executors.newFixedThreadPool(devices.length);
@@ -309,10 +352,13 @@ public class CLHorde {
 	 * Print basic info of the current platform.
 	 */
 	public void printPlatformInfo(){
-		System.out.println("\nCurrently using:");
-		System.out.println("Platform:\t" + platform.getName());
-		System.out.println("\t\tOpencl " + platform.getVersion());
-		System.out.println();
+		if(platform != null){
+			System.out.println("\nCurrently using:");
+			System.out.println("Platform:\t" + platform.getName());
+			System.out.println("\t\tOpencl " + platform.getVersion());
+			System.out.println();
+		}
+		
 	}
 	
 	/**
@@ -389,7 +435,7 @@ public class CLHorde {
 			} catch (ExecutionException e) {
 				e.printStackTrace();
 			}
-			for(int k=0; k< ptmp.length; k++){
+			for(int k=0; k< ptmp.length && i<demons.size(); k++){
 				p[i] = ptmp[k];
 				i++;
 			}
@@ -421,7 +467,7 @@ public class CLHorde {
 			} catch (ExecutionException e) {
 				e.printStackTrace();
 			}
-			for(int k=0; k< ptmp.length; k++){
+			for(int k=0; k< ptmp.length && i<demons.size(); k++){
 				p[i] = ptmp[k];
 				i++;
 			}
@@ -513,7 +559,7 @@ public class CLHorde {
 		int k=0;
 		for(int i=0; i<hordes.length; i++){
 			float[] thetaGPU= hordes[i].getTheta();
-			for(int j=0; j<thetaGPU.length; j++){
+			for(int j=0; j<thetaGPU.length && k<nbFeatures*demons.size(); j++){
 				theta[k]= thetaGPU[j];
 				k++;
 			}
@@ -533,7 +579,7 @@ public class CLHorde {
 		int k=0;
 		for(int i=0; i<hordes.length; i++){
 			float[] wGPU= hordes[i].getW();
-			for(int j=0; j<wGPU.length; j++){
+			for(int j=0; j<wGPU.length && k<nbFeatures*demons.size(); j++){
 				w[k]= wGPU[j];
 				k++;
 			}
@@ -553,7 +599,7 @@ public class CLHorde {
 		int k=0;
 		for(int i=0; i<hordes.length; i++){
 			float[] traceGPU= hordes[i].getTrace();
-			for(int j=0; j<traceGPU.length; j++){
+			for(int j=0; j<traceGPU.length && k<nbFeatures*demons.size(); j++){
 				trace[k]= traceGPU[j];
 				k++;
 			}

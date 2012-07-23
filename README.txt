@@ -2,7 +2,7 @@ USAGE:
 
 GPU work best with many threads. In this implementation, each demon is a GPU thread. For best performance many demons should exist. This number depends a lot on the GPU but it is safe to say that you should have at least 1000 demons.
 
-the number of demons should be a multiple of the workgroup size which is currently set at 128. If you don't do this bad things will happen.
+GPU work by executing many threads at a time. The number of threads that are executed in parallel is fixed which means the number of demons should be a multiple of the workgroup size which is currently set at 128 or (128*4 for the vectorized version). Adding more demons to fit will have a very negligible impact on performance. Simply put, you are charged by blocks of 128 (or 128*4) demons.
 
 
 INSTALLATION:
