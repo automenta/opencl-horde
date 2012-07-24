@@ -9,6 +9,7 @@ import org.bridj.Pointer;
 
 import rlpark.plugin.rltoys.envio.actions.Action;
 import rlpark.plugin.rltoys.math.vector.RealVector;
+import rlpark.plugin.rltoys.utils.NotImplemented;
 
 import com.nativelibs4java.opencl.CLBuffer;
 import com.nativelibs4java.opencl.CLContext;
@@ -22,6 +23,7 @@ import com.nativelibs4java.util.IOUtils;
 /**
  * The horde living on a GPU.
  * An instance of this class should be used by only one thread at a time.
+ * Most of the wait is differed so to allow the CPU to keep working until it needs to get the results.
  * @author Clement Gehring
  *
  */
@@ -174,7 +176,7 @@ public class GPUHorde {
 		
 		if(vectorize){
 			updateKernelName= "vec_"+updateKernelName;
-			//predictKernelName= "vec_"+predictKernelName;
+			predictKernelName= "vec_"+predictKernelName;
 			numDemon[0]= (int) numDemon[0]/4;
 		}
 		
@@ -188,6 +190,7 @@ public class GPUHorde {
 		
 		// create the program from source
 		hordeProgram= context.createProgram(kernelSource);
+		hordeProgram.defineMacro("VECTOR", "float"+ Integer.toString(vectorSize));
 		
 		
 		// create all the kernels and set the arguments
@@ -206,6 +209,8 @@ public class GPUHorde {
 		
 		CLEvent initEvent= initKernel.enqueueNDRange(queue, numDemon, workGroupSize);
 		initEvent.waitFor();
+		
+		uploadWeights();
 		
 		// link all demons to their reward, rho and gamma arrays
 		for(int i=0; i< demons.size(); i++){
@@ -261,8 +266,17 @@ public class GPUHorde {
 			CLEvent lastUpdate= demonUpdate;
 			last= x_t;
 			demonUpdate = updateHorde.enqueueNDRange(queue, numDemon, workGroupSize, rewardWrite, gammaWrite, rhoWrite, feature1Write, feature2Write);
-			if(lastUpdate != null)
+			if(lastUpdate != null){
 				lastUpdate.waitFor();
+//				lastUpdate.release();
+			}
+			
+			
+//			rewardWrite.release();
+//			gammaWrite.release();
+//			rhoWrite.release();
+//			feature1Write.release();
+//			feature2Write.release();
 		}
 		
 	}
@@ -296,9 +310,17 @@ public class GPUHorde {
 			
 			CLEvent predictEvent= predict.enqueueNDRange(queue, numDemon, workGroupSize, feature1Write);
 			predictions= predictionBuf.read(queue, predictEvent);
+			
 			last=v;
 		}
-		return predictions.getFloats();
+		
+		float[] p= new float[demons.size()];
+		float[] paddedP= predictions.getFloats();
+		for(int i=0; i< p.length; i++){
+			p[i]= paddedP[i];
+		}
+//		predictions.release();
+		return p;
 	}
 	/**
 	 * Fetch the prediction from the last seen feature Vector
@@ -339,6 +361,9 @@ public class GPUHorde {
 		
 		predict = hordeProgram.createKernel(predictKernelName);
 		predict.setArgs(thetaBuf, featuresBuf[0], predictionBuf, nbFeatures);
+		
+		traceReset = hordeProgram.createKernel(traceResetKernelName);
+		traceReset.setArgs(traceBuf, nbFeatures);
 		
 	}
 	
@@ -411,5 +436,71 @@ public class GPUHorde {
 				throw new RuntimeException("featureBuf2 has NaN");
 			}
 		}
+	}
+	
+	/**
+	 * Save the weights of all demons in the instances of CLDemon
+	 */
+	public void saveWeights() {
+		// read in all the weights
+		float[][] thetas= new float[demons.size()][nbFeatures];
+		float[] GPUTheta= thetaBuf.read(queue, demonUpdate).getFloats();
+		
+		float[][] ws= new float[demons.size()][nbFeatures];
+		float[] GPUW= wBuf.read(queue, demonUpdate).getFloats();
+		
+		float[][] traces= new float[demons.size()][nbFeatures];
+		float[] GPUTrace= traceBuf.read(queue, demonUpdate).getFloats();
+		
+		// parse the weights by demon
+		for(int i=0; i<demons.size(); i++){
+			for(int j=0; j<nbFeatures; j++){
+				thetas[i][j]= GPUTheta[i + j*numDemon[0]];
+				ws[i][j]= GPUW[i + j*numDemon[0]];
+				traces[i][j]= GPUTrace[i + j*numDemon[0]];
+			}
+			demons.get(i).setWeights(thetas[i], ws[i], traces[i]);
+		}	
+	}
+	
+	/**
+	 * upload to GPU any previous weights saved within CLDemons
+	 */
+	public void uploadWeights(){
+		// create all the float arrays
+		ByteOrder order= context.getByteOrder();
+		Pointer<Float> theta= Pointer.allocateFloats(numDemon[0]*nbFeatures).order(order);
+		Pointer<Float> w= Pointer.allocateFloats(numDemon[0]*nbFeatures).order(order);
+		Pointer<Float> trace= Pointer.allocateFloats(numDemon[0]*nbFeatures).order(order);
+		
+		// set all weights to the right value
+		for(int i=0; i<demons.size(); i++){
+			for(int j=0; j<nbFeatures; j++){
+				CLDemon d= demons.get(i);
+				float[] tmp= d.getTheta();
+				if(tmp != null){
+					theta.set(i+j*numDemon[0], tmp[j]);
+				}
+				
+				tmp= d.getW();
+				if(tmp != null){
+					w.set(i+j*numDemon[0], tmp[j]);
+				}
+				
+				tmp= d.getTrace();
+				if(tmp != null){
+					trace.set(i+j*numDemon[0], tmp[j]);
+				}
+			}
+		}
+		
+		// send the weights to the GPU
+		traceBuf.write(queue, trace, true, demonUpdate);
+		wBuf.write(queue, w, true, demonUpdate);
+		thetaBuf.write(queue, theta, true, demonUpdate);
+		
+		trace.release();
+		w.release();
+		theta.release();
 	}
 }

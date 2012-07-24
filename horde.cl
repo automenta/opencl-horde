@@ -423,3 +423,32 @@ __kernel void predict(__global float* theta,
 	predictions[index]=Q;
 }
 
+/*
+*	Fetch the predictions of all demons given a feature vector (Vectorized version)
+*
+* Param
+*	theta :		The weights that approximate Q(s,a)
+*
+*	features :	The feature vector on which the predictions are based
+*
+*	predictions :	The buffer where the predictions are stored
+*
+*
+*/
+__kernel void vec_predict(__global float4* theta,
+		__global const float4* features,
+		__global float4* predictions,
+		int dim)
+{
+	int index= get_global_id(0);
+	int numDemons= get_global_size(0);
+	int i;
+	int j=0;
+	float4 Q= (float4) 0.0f;
+	for(i=index; i<dim*numDemons; i+= numDemons){
+		Q += theta[i]*features[j];
+		j++;
+	}
+	predictions[index]=Q;
+}
+

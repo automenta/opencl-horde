@@ -1,5 +1,9 @@
 package horde;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -37,30 +41,39 @@ import com.nativelibs4java.opencl.JavaCL;
  * @author Clement Gehring
  *
  */
-public class CLHorde {
+public class CLHorde implements Serializable{
 	
+	/**
+	 * Serial ID
+	 */
+	private static final long serialVersionUID = -1657948742412084543L;
+	
+	/**
+	 * Only consider devices that are tagged as available
+	 */
 	private final static boolean onlyAvailable = true;
+	
 	/**
 	 * OpenCL platform
 	 */
-	CLPlatform platform;
+	transient CLPlatform platform;
 	
 	/**
 	 * The OpenCL contexts
 	 */
-	CLContext[] contexts;
+	transient CLContext[] contexts;
 	/**
 	 * The OpenCL queues
 	 */
-	CLQueue[] queues;
+	transient CLQueue[] queues;
 	/**
 	 * The GPUs
 	 */
-	CLDevice[] devices;
+	transient CLDevice[] devices;
 	/**
 	 * The GPUHordes that reside in each GPU.
 	 */
-	GPUHorde[] hordes;
+	transient GPUHorde[] hordes;
 	
 	/**
 	 * The global list of all demons
@@ -80,16 +93,18 @@ public class CLHorde {
 	/**
 	 * Executor to launch all GPU operations simultaneously
 	 */
-	ExecutorService executor;
+	transient ExecutorService executor;
 	/**
 	 * The wrappers for the update task
 	 */
-	GPUHordeUpdater[] updaters;
+	transient GPUHordeUpdater[] updaters;
 	/**
 	 * The wrappers for the predictions task
 	 */
-	GPUHordepredictor[] predictors;
-	Future<?>[] futures;
+	transient GPUHordepredictor[] predictors;
+	transient Future<?>[] futures;
+	
+	private boolean CPU=false;
 	
 	/**
 	 * This class is used to launch all the GPU updates at once
@@ -153,21 +168,7 @@ public class CLHorde {
 	public CLHorde(List<CLDemon> demons, List<RewardFunction> rewardFunctions, List<OutcomeFunction> outcomeFunctions,
 		      List<GammaFunction> gammaFunctions, int nbFeatures) {
 		
-		// store the demons
-		this.demons= new ArrayList<CLDemon>();
-		this.demons.addAll(demons);
-		functions= new ArrayList<HordeUpdatable>();
-		
-		// add all functions to the update list
-		addFunctions(rewardFunctions);
-		addFunctions(outcomeFunctions);
-		addFunctions(gammaFunctions);
-		
-		this.nbFeatures=nbFeatures;
-		
-		// initialise the OpenCL context and partition the demons
-		init();
-		partitionDemons();
+		this(demons, rewardFunctions, outcomeFunctions, gammaFunctions, nbFeatures, false);
 		
 	}
 	
@@ -184,9 +185,10 @@ public class CLHorde {
 		addFunctions(gammaFunctions);
 		
 		this.nbFeatures=nbFeatures;
+		this.CPU=CPU;
 		
 		// initialise the OpenCL context and partition the demons
-		init(CPU);
+		init();
 		partitionDemons();
 	}
 	
@@ -261,7 +263,7 @@ public class CLHorde {
 	 * Initialise all the OpenCL contexts and pick the best platform on which to run on GPUs
 	 */
 	public void init(){
-		init(false);
+		init(CPU);
 	}
 	
 	/**
@@ -608,5 +610,25 @@ public class CLHorde {
 		
 	}
 	
+	/**
+	 *Fetch all the weights and store them in their corresponding CLDemon
+	 *This is a blocking call and will not fetch all GPUs simultaneously
+	 */
+	public void saveWeights(){
+		for(int i=0; i< hordes.length; i++){
+			hordes[i].saveWeights();
+		}
+	}
 	
+	private void writeObject(ObjectOutputStream oos) throws IOException{
+		saveWeights();
+		oos.defaultWriteObject();
+	}
+	
+	private void readObject(ObjectInputStream ois)
+    		throws ClassNotFoundException, IOException {
+		ois.defaultReadObject();
+		init();
+		partitionDemons();
+	}
 }
