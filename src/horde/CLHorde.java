@@ -276,7 +276,7 @@ public class CLHorde implements Serializable{
 		if(CPU){
 			contexts= new CLContext[1];
 			contexts[0]= JavaCL.createBestContext(DeviceFeature.CPU);
-			if(contexts[0] == null || contexts[0].getDeviceCount() <1){
+			if(contexts[0] == null || contexts[0].getPlatform().listCPUDevices(onlyAvailable).length <1){
 				throw new RuntimeException("CPU context failed. Maybe your opencl drivers are missing.");
 			}
 			devices= contexts[0].getDevices();
@@ -486,6 +486,7 @@ public class CLHorde implements Serializable{
 				p[i] = ptmp[k];
 				i++;
 			}
+			
 		}
 		return p;
 	}

@@ -301,7 +301,7 @@ public class GPUHorde {
 	public float[] predictions(RealVector v){
 		Pointer<Float> predictions;
 		//check if the predictions need to be recomputed
-		if(v.equals(last)){
+		if(v==null || last== null || v.equals(last)){
 			//if no, then just upload the predictions
 			predictions= predictionBuf.read(queue, demonUpdate);
 		}else{
