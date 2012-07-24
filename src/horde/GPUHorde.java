@@ -134,14 +134,19 @@ public class GPUHorde {
 		// set the dimensions of the task
 		numDemon= new int[] {demons.size()};
 		
-		// pad the demons so that we have a multiple of the group size
+		// set size of vector
+		vectorSize= device.getPreferredVectorWidthFloat();
+		vectorize= vectorSize>1;
 		if(vectorize){
-			int size= vectorSize * workGroupSize[0];
-			numDemon[0] += ((size - numDemon[0]%size))%size;
+			System.out.println("Using vector optimization");
 		}else{
-			int size= workGroupSize[0];
-			numDemon[0] += ((size - numDemon[0]%size))%size;
+			System.out.println("Vector optimization not supported");
 		}
+		
+		// pad the demons so that we have a multiple of the group size
+		int size= vectorSize * workGroupSize[0];
+		numDemon[0] += ((size - numDemon[0]%size))%size;
+		
 		
 		features= new Pointer[2];
 		featuresBuf= new CLBuffer[2];
@@ -190,8 +195,9 @@ public class GPUHorde {
 		
 		// create the program from source
 		hordeProgram= context.createProgram(kernelSource);
-		hordeProgram.defineMacro("VECTOR", "float"+ Integer.toString(vectorSize));
-		
+		if(vectorize){
+			hordeProgram.defineMacro("VECTOR", "float"+ Integer.toString(vectorSize));
+		}
 		
 		// create all the kernels and set the arguments
 		updateHorde = hordeProgram.createKernel(updateKernelName);

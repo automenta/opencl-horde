@@ -280,6 +280,7 @@ public class CLHorde implements Serializable{
 				throw new RuntimeException("CPU context failed. Maybe your opencl drivers are missing.");
 			}
 			devices= contexts[0].getDevices();
+			platform= contexts[0].getPlatform();
 			
 		}else{
 			// get all platforms containing GPUs
@@ -348,7 +349,19 @@ public class CLHorde implements Serializable{
 			updaters[i]= new GPUHordeUpdater();
 			predictors[i]= new GPUHordepredictor();
 		}
+		if(CPU){
+			appleDriverCheck();
+		}
 		
+	}
+	/**
+	 * Check for apple cpu driver and prevent the workgroup size bug
+	 * Stupid apple...
+	 */
+	private void appleDriverCheck(){
+		if(platform.getName().toLowerCase().contains("apple")){
+			hordes[0].workGroupSize[0]=1;
+		}
 	}
 	/**
 	 * Print basic info of the current platform.

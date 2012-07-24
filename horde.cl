@@ -273,15 +273,15 @@ __kernel void
 * This should improve significantly performance over the non-vecotrized version.
 */
 __kernel void
- vec_updateGTDLambda(__global float4* theta, 
-		__global float4* w,
-		__global float4* trace, 
+ vec_updateGTDLambda(__global VECTOR* theta, 
+		__global VECTOR* w,
+		__global VECTOR* trace, 
 		__global const float* features1,
 		__global const float* features2, 
-		__global const float4* rhoArray, 
-		__global const float4* rewardArray,
-		__global const float4* gammaArray,
-		__global float4* prediction,
+		__global const VECTOR* rhoArray, 
+		__global const VECTOR* rewardArray,
+		__global const VECTOR* gammaArray,
+		__global VECTOR* prediction,
 		const int dim)
 {
 
@@ -295,8 +295,8 @@ __kernel void
 
 	//Compute the TD error
 	j=0;
-	float4 Q1= (float4) 0.0f, Q2=(float4) 0.0f;
-	float4 delta;
+	VECTOR Q1= (VECTOR) 0.0f, Q2=(VECTOR) 0.0f;
+	VECTOR delta;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += theta[i]*features1[j];
 		Q2 += theta[i]*features2[j];
@@ -311,13 +311,13 @@ __kernel void
 	//Update the elligibility trace
 	j=0;
 	for(i=index; i<dim*numDemons; i+= numDemons){
-		trace[i]= rhoArray[index]*((float4)(features1[j]) + gamma*LAMBDA*trace[i]);
+		trace[i]= rhoArray[index]*((VECTOR)(features1[j]) + gamma*LAMBDA*trace[i]);
 		j++;
 	}
 
 	//Update Theta
 	j=0;
-	Q1= (float4) (0.0f);
+	Q1= (VECTOR) (0.0f);
 	float one_minus_lambda= 1.0f-LAMBDA;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += trace[i]*w[i];
@@ -330,7 +330,7 @@ __kernel void
 	
 	//Update w
 	j=0;
-	Q1= (float4) (0.0f);
+	Q1= (VECTOR) (0.0f);
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q1 += features1[j]*w[i];
 		j++;
@@ -435,16 +435,16 @@ __kernel void predict(__global float* theta,
 *
 *
 */
-__kernel void vec_predict(__global float4* theta,
-		__global const float4* features,
-		__global float4* predictions,
+__kernel void vec_predict(__global VECTOR* theta,
+		__global const VECTOR* features,
+		__global VECTOR* predictions,
 		int dim)
 {
 	int index= get_global_id(0);
 	int numDemons= get_global_size(0);
 	int i;
 	int j=0;
-	float4 Q= (float4) 0.0f;
+	VECTOR Q= (VECTOR) 0.0f;
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		Q += theta[i]*features[j];
 		j++;
