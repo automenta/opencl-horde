@@ -291,7 +291,7 @@ __kernel void
 	int i;
 	int j;
 
-	float4 gamma= gammaArray[index];
+	VECTOR gamma= gammaArray[index];
 
 	//Compute the TD error
 	j=0;
@@ -324,7 +324,7 @@ __kernel void
 	}
 	for(i=index; i<dim*numDemons; i+= numDemons){
 		theta[i] = theta[i] + ALPHA*(delta*trace[i] 
-				- gamma*Q1*(features1[j]*(one_minus_lambda)));
+				- gamma*Q1*(features2[j]*(one_minus_lambda)));
 		j++;
 	}
 	
