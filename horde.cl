@@ -262,7 +262,7 @@ __kernel void
 	updateTraceGTD(trace, features1, rho, gamma, LAMBDA, i, dim, size);
 
 	//Update Theta
-	updateThetaGTD(theta, w, trace, features1, ALPHA, gamma, delta.x, LAMBDA, i, dim, size);
+	updateThetaGTD(theta, w, trace, features2, ALPHA, gamma, delta.x, LAMBDA, i, dim, size);
 	
 	//Update w
 	updateWGTD(w, trace, features1, ALPHA*ETA, delta.x, i, dim, size);
