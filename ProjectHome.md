@@ -1,0 +1,2 @@
+Horde running on GPU. This is a first version and still requires a lot of work. It most likely still contain bugs (use at your own risk).
+Very soon, sparse vectors will be added to the project allowing for great speed ups. As it stands, the opencl-horde needs a great number of demons to see any performance gain over cpu, this will change soon.
